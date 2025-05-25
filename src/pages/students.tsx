@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Layout } from "@/components/layout";
+import { Layout } from "../components/layout";
 import { 
   Card, 
   CardContent, 
@@ -8,7 +8,7 @@ import {
   CardTitle, 
   CardDescription,
   CardFooter
-} from "@/components/ui/card";
+} from "../components/ui/card";
 import { 
   Table, 
   TableBody, 
@@ -16,10 +16,10 @@ import {
   TableHead, 
   TableHeader, 
   TableRow 
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+} from "../components/ui/table";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { 
   Dialog, 
   DialogContent, 
@@ -29,7 +29,7 @@ import {
   DialogTitle, 
   DialogTrigger,
   DialogClose
-} from "@/components/ui/dialog";
+} from "../components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,7 +37,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "../components/ui/dropdown-menu";
 import { 
   Form, 
   FormControl, 
@@ -46,8 +46,8 @@ import {
   FormItem, 
   FormLabel, 
   FormMessage 
-} from "@/components/ui/form";
-import { useToast } from "@/hooks/use-toast";
+} from "../components/ui/form";
+import { useToast } from "../hooks/use-toast";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -62,8 +62,8 @@ import {
   BarChart2, 
   Filter
 } from "lucide-react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Badge } from "@/components/ui/badge";
+import { apiRequest, queryClient } from "../lib/queryClient";
+import { Badge } from "../components/ui/badge";
 
 interface Student {
   id: number;
@@ -296,7 +296,7 @@ export default function Students() {
                       <FormItem>
                         <FormLabel>Email</FormLabel>
                         <FormControl>
-                          <Input placeholder="john.doe@example.com" type="email" {...field} />
+                          <Input placeholder="john.doe..example.com" type="email" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

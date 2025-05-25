@@ -1,51 +1,51 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 // src/lib/queryClient.ts
 
-// Add this to extend ImportMeta for Vite env variables
-interface ImportMetaEnv {
-  readonly VITE_USE_MOCK?: string;
-  // add other env variables here as needed
-}
-interface ImportMeta {
-  readonly env: ImportMetaEnv;
-}
-
 import {
-  mockUsers as initialMockUsers,
-  getUserByCredentials,
-  getUsersByRole as getUsersByRoleFromMock,
-  // getFacultyBySubject // Not directly used by current pages via queryClient, but good to have
-} from "../data/mockUser";
-import {
-  rollList as initialRollList,
-  mockAttendanceData as initialMockAttendanceData,
-  subjectsData as initialSubjectsData, // Represents courses for MCA
-  programsData,
-} from "../data/rollList"; // Assuming programsData is also in rollList.ts or imported
+  initialCombinedUsers,
+  // getUserByCredentials as getUserByCredentialsFromMockFile, // Removed: Not exported from appMockData
+  // getUsersByRole as getUsersByRoleFromStaticData,       // Removed: Not exported from appMockData
+  allSubjects as initialAllSubjects,
+  facultyList as initialFacultyList,
+  studentList as initialStudentList, // For specific student list operations if needed
+  departmentData as initialDepartmentData,
+  initialMockAttendance,
+  studentList,
+  // You might not need to import individual lists like facultyList, studentList here
+  // if mockUsersStore (derived from initialCombinedUsers) is the main source for user queries.
+} from "../data/appMockData"; // Path to your appMockData.ts
 
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryFunction } from "@tanstack/react-query"; // Make sure these are imported
 
 // --- In-memory stores for mock data ---
-let mockUsersStore = JSON.parse(JSON.stringify(initialMockUsers));
-let mockCoursesStore = JSON.parse(JSON.stringify(initialSubjectsData.mca)); // For MCA courses
-let mockClassesStore: any[] = []; // Will be populated by POST /api/classes
-let mockAttendanceStore = JSON.parse(JSON.stringify(initialMockAttendanceData));
-let mockEnrollmentsStore: any[] = []; // Will be populated by POST /api/enrollments
-let mockRollListStore = JSON.parse(JSON.stringify(initialRollList));
+// These stores will hold the current state of mock data, allowing for dynamic changes (add, edit, delete via API mocks)
+let mockUsersStore = JSON.parse(JSON.stringify(initialCombinedUsers));
+let mockCoursesStore = JSON.parse(JSON.stringify(initialAllSubjects)); // 'courses' are effectively 'subjects'
+let mockClassesStore: any[] = []; // Starts empty, populated by POST /api/classes or can be pre-populated
+let mockAttendanceStore = JSON.parse(JSON.stringify(initialMockAttendance));
+let mockEnrollmentsStore: any[] = []; // Starts empty, populated by POST /api/enrollments
 
-
-// Helper to reset stores if needed (for testing, etc.)
+// Helper to reset stores to their initial state
 export function resetMockStores() {
-  mockUsersStore = JSON.parse(JSON.stringify(initialMockUsers));
-  mockCoursesStore = JSON.parse(JSON.stringify(initialSubjectsData.mca));
-  mockClassesStore = [];
-  mockAttendanceStore = JSON.parse(JSON.stringify(initialMockAttendanceData));
-  mockEnrollmentsStore = [];
-  mockRollListStore = JSON.parse(JSON.stringify(initialRollList));
+  mockUsersStore = JSON.parse(JSON.stringify(initialCombinedUsers));
+  mockCoursesStore = JSON.parse(JSON.stringify(initialAllSubjects));
+  mockClassesStore = []; // Reset classes
+  mockAttendanceStore = JSON.parse(JSON.stringify(initialMockAttendance));
+  mockEnrollmentsStore = []; // Reset enrollments
   console.log("[Mock API] All mock stores have been reset.");
 }
-
 // --- End In-memory stores ---
 
+// --- Standard Mock Response Utilities ---
+interface MockResponse {
+  ok: boolean;
+  status: number;
+  json: () => Promise<any>;
+  text: () => Promise<string>;
+  body?: any;
+}
 
 async function throwIfResNotOk(res: Response | MockResponse) {
   if (!res.ok) {
@@ -54,41 +54,34 @@ async function throwIfResNotOk(res: Response | MockResponse) {
   }
 }
 
-interface MockResponse {
-  ok: boolean;
-  status: number;
-  json: () => Promise<any>;
-  text: () => Promise<string>;
-  body?: any; // Add body for easier debugging
-}
-
-// Helper to create a mock Response object
 function mockResponse(data: any, status: number = 200): Promise<MockResponse> {
   const response = {
     ok: status >= 200 && status < 300,
     status: status,
     json: async () => data,
     text: async () => JSON.stringify(data),
-    body: data, // For easier inspection
+    body: data,
   };
   return Promise.resolve(response);
 }
+// --- End Mock Response Utilities ---
 
-
-export const VITE_USE_MOCK = true; 
+export const VITE_USE_MOCK = true; // Forcing mock mode
 
 export async function apiRequest(method: string, url: string, data?: any): Promise<MockResponse> {
-  const normalizedUrl = new URL(url, "http://localhost"); // Normalize URL for easier parsing
+  const normalizedUrl = new URL(url, "http://localhost:3000"); // Base URL doesn't really matter for path/param parsing
   const path = normalizedUrl.pathname;
   const params = normalizedUrl.searchParams;
 
   console.log(`[Mock API Request] Method: ${method}, Path: ${path}, Params: ${params.toString()}, Body:`, data);
 
-
   if (VITE_USE_MOCK) {
     // --- User and Auth related mocks ---
     if (path.startsWith("/api/login") && method.toUpperCase() === "POST") {
-      const user = getUserByCredentials(data.username, data.password);
+      // Fallback: Find user by username and password from mockUsersStore
+      const user = mockUsersStore.find(
+        (u: any) => u.username === data.username && u.password === data.password
+      );
       if (user) return mockResponse(user);
       return mockResponse({ message: "Invalid credentials" }, 401);
     }
@@ -96,137 +89,180 @@ export async function apiRequest(method: string, url: string, data?: any): Promi
     if (path.startsWith("/api/users")) {
       if (method.toUpperCase() === "GET") {
         const role = params.get("role");
+        const department = params.get("department"); // For filtering faculty/students by dept
+        let usersToReturn = [...mockUsersStore];
+
         if (role) {
-          return mockResponse(getUsersByRoleFromMock(role, mockUsersStore));
+          usersToReturn = usersToReturn.filter((u: any) => u.role === role);
         }
-        // Handle GET /api/users/:id if needed
-        return mockResponse(mockUsersStore);
+        if (department) {
+          usersToReturn = usersToReturn.filter((u: any) => u.department === department);
+        }
+        // TODO: Handle GET /api/users/:id if needed by your app
+        return mockResponse(usersToReturn);
       }
       if (method.toUpperCase() === "POST") { // Create user (student or faculty)
+        const maxId = mockUsersStore.length > 0 ? Math.max(...mockUsersStore.map((u: any) => u.id)) : 0;
         const newUser = {
-          id: mockUsersStore.length > 0 ? Math.max(...mockUsersStore.map((u: any) => u.id)) + 1 : 1000,
+          id: maxId + 1, // Simple incrementing ID
           ...data,
           createdAt: new Date().toISOString(),
           profileImage: data.profileImage || null,
         };
         mockUsersStore.push(newUser);
-        console.log("[Mock API] Added new user:", newUser);
-        console.log("[Mock API] Current users store:", mockUsersStore);
+        console.log("[Mock API] Added new user:", newUser, "Current store size:", mockUsersStore.length);
         return mockResponse(newUser, 201);
       }
     }
 
-    // --- Course related mocks ---
-    if (path.startsWith("/api/courses")) {
-      if (method.toUpperCase() === "GET") {
-        const facultyId = params.get("facultyId");
-        if (facultyId) {
-          // Filter courses assigned to this facultyId
-          const facultyCourses = mockCoursesStore.filter((c: any) => c.facultyId === parseInt(facultyId));
-          return mockResponse(facultyCourses);
-        }
-        return mockResponse(mockCoursesStore.map((s: any) => ({
-          id: s.id, name: s.name, code: s.code, credits: s.credits, facultyId: s.facultyId, facultyName: s.faculty
-        })));
-      }
-      if (method.toUpperCase() === "POST") { // Create course
-        const newCourse = {
-          id: mockCoursesStore.length > 0 ? Math.max(...mockCoursesStore.map((c: any) => c.id.replace ? parseInt(c.id.replace(/\D/g,''))+100 : c.id+1)) +1 : 700, // Simple ID generation
-          ...data,
-          // facultyName might need to be looked up if only facultyId is passed
-        };
-        const facultyMember = mockUsersStore.find((u:any) => u.id === newCourse.facultyId && u.role === 'faculty');
-        if (facultyMember) (newCourse as any).faculty = (facultyMember as any).name;
+    // Inside apiRequest function in queryClient.ts
 
+    // --- Timetable Mock ---
+    if (path.startsWith("/api/timetable/student")) {
+        const department = params.get("department");
+        const semester = params.get("semester") ? parseInt(params.get("semester")!) : null;
+
+        if (department && semester !== null) {
+            // Find subjects for this department & semester
+            const deptInfo = initialDepartmentData[department as "MCA" | "CSE"];
+            const subjectIdsForSem = deptInfo?.academicYears["2024-2025"]?.semesters[semester]?.subjectIds || [];
+            
+            const relevantSubjects = mockCoursesStore.filter((s:any) => subjectIdsForSem.includes(s.id));
+
+            // Create some mock class schedules based on these subjects
+            const mockTimetable: any[] = [];
+            const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+            let classIdCounter = 0;
+
+            relevantSubjects.forEach((subject: any, index: number) => {
+                const dayIndex = index % days.length;
+                mockTimetable.push({
+                    id: `tt_${subject.id}_${dayIndex}`,
+                    subjectName: subject.name,
+                    subjectCode: subject.code,
+                    day: days[dayIndex],
+                    time: (index % 3 === 0) ? "09:00 AM - 10:30 AM" : (index % 3 === 1) ? "11:00 AM - 12:30 PM" : "02:00 PM - 03:30 PM",
+                    room: `${department}-R${101 + index}`,
+                    facultyName: mockUsersStore.find((f:any) => f.id === subject.facultyId)?.name || "N/A",
+                });
+            });
+            return mockResponse(mockTimetable);
+        }
+        return mockResponse([], 400); // Bad request if params missing
+    }
+
+    // --- Events Mock ---
+    if (path.startsWith("/api/events")) {
+        const target = params.get("target"); // e.g., 'students'
+        const department = params.get("department");
+        const mockEvents = [
+            { id: "evt1", title: `Dept. Seminar on AI (${department || 'General'})`, date: "2025-06-10", time: "02:00 PM", description: "Expert talk on latest AI trends.", type: "Seminar" },
+            { id: "evt2", title: "Sports Day Trials", date: "2025-06-15", description: "Trials for upcoming annual sports meet.", type: "Sports"},
+            { id: "evt3", title: "Tech Fest 'Innovate 2025'", date: "2025-07-01", description: "Annual technical festival.", type: "Fest"},
+        ];
+        // Further filter if needed by department or target
+        return mockResponse(mockEvents);
+    }
+
+    // --- Messages/Notifications Mock ---
+    if (path.startsWith("/api/notifications/student")) {
+        // const studentId = path.split("/").pop();
+        const mockMessages = [
+            { id: "msg1", title: "Library Due Reminder", content: "Your borrowed book 'Advanced Java' is due tomorrow.", date: new Date(2025,4,24).toISOString(), read: false, type: "Reminder" },
+            { id: "msg2", title: "Fee Payment Update", content: "Semester fee payment portal is now open.", date: new Date(2025,4,20).toISOString(), read: true, type: "Info" },
+            { id: "msg3", from: "Admin", title: "Campus Closure Notice", content: "Campus will be closed on Monday due to public holiday.", date: new Date(2025,4,22).toISOString(), read: false, type: "Notice"},
+        ];
+        return mockResponse(mockMessages);
+    }
+
+    // --- Course (Subject) related mocks ---
+    if (path.startsWith("/api/courses")) { // Courses are referred to as subjects in appMockData
+      if (method.toUpperCase() === "GET") {
+        let coursesToReturn = [...mockCoursesStore];
+        const facultyId = params.get("facultyId") ? parseInt(params.get("facultyId")!) : null;
+        const department = params.get("department");
+        const semester = params.get("semester") ? parseInt(params.get("semester")!) : null;
+
+        if (department) {
+          coursesToReturn = coursesToReturn.filter((c: any) => c.department === department);
+        }
+        if (semester !== null) {
+          coursesToReturn = coursesToReturn.filter((c: any) => c.semester === semester);
+        }
+        if (facultyId !== null) {
+          // Find subjects taught by this faculty
+          const facultyUser = mockUsersStore.find((u:any) => u.id === facultyId && u.role === 'faculty');
+          const facultySubjectIds = facultyUser?.subjectIds || [];
+          coursesToReturn = coursesToReturn.filter((c: any) => facultySubjectIds.includes(c.id));
+        }
+        
+        // Add faculty name to courses
+        coursesToReturn = coursesToReturn.map((course:any) => {
+            const faculty = mockUsersStore.find((f:any) => f.id === course.facultyId && f.role === 'faculty');
+            return {...course, facultyName: faculty ? faculty.name : "N/A"};
+        });
+        return mockResponse(coursesToReturn);
+      }
+      if (method.toUpperCase() === "POST") { // Create course (subject)
+        const newCourse = {
+          // ID generation for string IDs like "MCA107" needs a strategy.
+          // For simplicity, let's assume new mock courses get a temporary numeric-like ID for now
+          // or expect a code to be unique.
+          id: `NEW_COURSE_${mockCoursesStore.length + 1}`, // Temporary ID strategy
+          credits: data.credits || 4, // Default credits
+          ...data, // name, code, description, department, semester, facultyId
+        };
         mockCoursesStore.push(newCourse);
-         console.log("[Mock API] Added new course:", newCourse);
+        console.log("[Mock API] Added new course (subject):", newCourse);
         return mockResponse(newCourse, 201);
       }
     }
     
-    // Inside apiRequest function in lib/queryClient.ts
-
-    // --- Attendance related mocks ---
-    if (path.startsWith("/api/attendance/range")) {
-        let filteredAttendance = [...mockAttendanceStore]; // Use the in-memory store
-        const startDateParam = params.get("startDate");
-        const endDateParam = params.get("endDate");
-        const studentIdParam = params.get("studentId");
-        const registrationNumberParam = params.get("registrationNumber");
-
-        if (studentIdParam) {
-            filteredAttendance = filteredAttendance.filter((a: any) => a.studentId === parseInt(studentIdParam) || a.studentId === studentIdParam);
-        } else if (registrationNumberParam) {
-            // Assuming studentId in mockAttendanceStore can be registrationNumber from generateAttendanceData
-            filteredAttendance = filteredAttendance.filter((a: any) => a.studentId === registrationNumberParam);
-        }
-        // Note: Your mockAttendanceData is generated using registration numbers as studentId in the records.
-        // If your User object in useAuth has an `id` (numeric) and `registrationNumber`,
-        // ensure the query from StudentView sends the correct identifier that matches your mockAttendanceStore.
-        // The queryKey in StudentView currently sends both `user?.id` as studentId and `user?.registrationNumber`.
-        // The above logic prioritizes studentIdParam if present.
-
-        if (startDateParam) {
-            filteredAttendance = filteredAttendance.filter((a: any) => new Date(a.date) >= new Date(startDateParam));
-        }
-        if (endDateParam) {
-            filteredAttendance = filteredAttendance.filter((a: any) => new Date(a.date) <= new Date(endDateParam));
-        }
-        
-        // Enrich with student name (though for student view, it's their own name)
-        const enrichedAttendance = filteredAttendance.map((att: any) => {
-          const studentDetails = mockUsersStore.find((s: any) => s.id === att.studentId || s.registrationNumber === att.studentId);
-          return {
-            ...att,
-            studentName: studentDetails ? studentDetails.name : att.studentName || 'Unknown Student',
-            // subject, instructor, time, duration should come directly from mockAttendanceStore records
-          };
-        });
-        return mockResponse(enrichedAttendance);
-    }
-    // ... other handlers
-    
     // --- Classes related mocks ---
      if (path.startsWith("/api/classes/today")) {
         const todayDay = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-        const todayClasses = mockClassesStore.filter(c => c.day === todayDay).map(c => {
-            const course = mockCoursesStore.find((cs:any) => cs.id === c.courseId);
-            return {...c, courseName: course?.name, facultyName: course?.faculty }
+        const todayClasses = mockClassesStore.filter((c:any) => c.day === todayDay).map((c:any) => {
+            const course = mockCoursesStore.find((cs:any) => cs.id === c.courseId || cs.code === c.courseId); // Allow matching by ID or code
+            const faculty = mockUsersStore.find((f:any) => f.id === course?.facultyId && f.role === 'faculty');
+            return {...c, courseName: course?.name, facultyName: faculty?.name || "N/A" }
         });
         return mockResponse(todayClasses);
     }
-    if (path.startsWith("/api/classes/course")) { // GET /api/classes/course/:courseId
-        const courseId = parseInt(path.split("/").pop()!);
-        const classesForCourse = mockClassesStore.filter(c => c.courseId === courseId).map(c => {
-            const course = mockCoursesStore.find((cs:any) => cs.id === c.courseId);
-            return {...c, courseName: course?.name, facultyName: course?.faculty }
+    if (path.startsWith("/api/classes/course")) {
+        const courseIdOrCode = path.split("/").pop()!;
+        const classesForCourse = mockClassesStore.filter((c:any) => c.courseId === courseIdOrCode || c.courseId === parseInt(courseIdOrCode)).map((c:any) => {
+            const course = mockCoursesStore.find((cs:any) => cs.id === c.courseId || cs.code === c.courseId);
+            const faculty = mockUsersStore.find((f:any) => f.id === course?.facultyId && f.role === 'faculty');
+            return {...c, courseName: course?.name, facultyName: faculty?.name || "N/A" }
         });
         return mockResponse(classesForCourse);
     }
     if (path.startsWith("/api/classes")) {
         if (method.toUpperCase() === "GET") {
-             const allRegularClasses = mockClassesStore.map(c => {
-                const course = mockCoursesStore.find((cs:any) => cs.id === c.courseId);
-                return {...c, courseName: course?.name, facultyName: course?.faculty }
+             const allRegularClasses = mockClassesStore.map((c:any) => {
+                const course = mockCoursesStore.find((cs:any) => cs.id === c.courseId || cs.code === c.courseId);
+                const faculty = mockUsersStore.find((f:any) => f.id === course?.facultyId && f.role === 'faculty');
+                return {...c, courseName: course?.name, facultyName: faculty?.name || "N/A" }
             });
             return mockResponse(allRegularClasses);
         }
-        if (method.toUpperCase() === "POST") { // Create class
+        if (method.toUpperCase() === "POST") {
+            const maxId = mockClassesStore.length > 0 ? Math.max(...mockClassesStore.map(c => c.id)) : 0;
             const newClass = {
-                id: mockClassesStore.length > 0 ? Math.max(...mockClassesStore.map(c => c.id)) + 1 : 1,
-                ...data
+                id: maxId + 1,
+                ...data // courseId, day, startTime, endTime, roomNumber
             };
             mockClassesStore.push(newClass);
-            console.log("[Mock API] Added new class:", newClass);
+            console.log("[Mock API] Added new class schedule:", newClass);
             return mockResponse(newClass, 201);
         }
     }
 
-
     // --- Enrollments ---
-    if (path.startsWith("/api/enrollments/course")) { // GET /api/enrollments/course/:courseId
-        const courseId = parseInt(path.split("/").pop()!);
-        const enrollmentsForCourse = mockEnrollmentsStore.filter(e => e.courseId === courseId);
+    if (path.startsWith("/api/enrollments/course")) {
+        const courseIdOrCode = path.split("/").pop()!;
+        const course = mockCoursesStore.find((cs:any) => cs.id === courseIdOrCode || cs.code === courseIdOrCode);
+        const enrollmentsForCourse = mockEnrollmentsStore.filter((e:any) => e.courseId === course?.id);
         return mockResponse(enrollmentsForCourse);
     }
     if (path.startsWith("/api/enrollments")) {
@@ -234,12 +270,12 @@ export async function apiRequest(method: string, url: string, data?: any): Promi
             return mockResponse(mockEnrollmentsStore);
         }
         if (method.toUpperCase() === "POST") {
+            const maxId = mockEnrollmentsStore.length > 0 ? Math.max(...mockEnrollmentsStore.map(e => e.id)) : 0;
             const newEnrollment = {
-                id: mockEnrollmentsStore.length > 0 ? Math.max(...mockEnrollmentsStore.map(e => e.id)) + 1 : 1,
+                id: maxId + 1,
                 enrollmentDate: new Date().toISOString(),
-                ...data
+                ...data // studentId, courseId
             };
-            // Prevent duplicate enrollments for the same student in the same course
             const existing = mockEnrollmentsStore.find(e => e.studentId === newEnrollment.studentId && e.courseId === newEnrollment.courseId);
             if (existing) {
                 return mockResponse({ message: "Student already enrolled in this course" }, 409);
@@ -252,134 +288,135 @@ export async function apiRequest(method: string, url: string, data?: any): Promi
 
     // --- Attendance related mocks ---
     if (path.startsWith("/api/attendance/range")) {
-        let filteredAttendance = [...mockAttendanceStore];
+        let attendanceToReturn = [...mockAttendanceStore];
+        const studentIdParam = params.get("studentId") ? parseInt(params.get("studentId")!) : null;
+        const registrationNumberParam = params.get("registrationNumber");
+        const departmentParam = params.get("department");
         const startDateParam = params.get("startDate");
         const endDateParam = params.get("endDate");
-        // const facultyIdParam = params.get("facultyId"); // TODO: Link attendance to faculty if needed
 
+        if (studentIdParam !== null) {
+            attendanceToReturn = attendanceToReturn.filter((a: any) => a.studentId === studentIdParam);
+        } else if (registrationNumberParam) {
+            attendanceToReturn = attendanceToReturn.filter((a: any) => a.registrationNumber === registrationNumberParam);
+        }
+        if (departmentParam) {
+             attendanceToReturn = attendanceToReturn.filter((a:any) => a.department === departmentParam);
+        }
         if (startDateParam) {
-            filteredAttendance = filteredAttendance.filter(a => new Date(a.date) >= new Date(startDateParam));
+            attendanceToReturn = attendanceToReturn.filter((a: any) => new Date(a.date) >= new Date(startDateParam));
         }
         if (endDateParam) {
-            filteredAttendance = filteredAttendance.filter(a => new Date(a.date) <= new Date(endDateParam));
+            attendanceToReturn = attendanceToReturn.filter((a: any) => new Date(a.date) <= new Date(endDateParam));
         }
-        // Enrich with student and course names
-        const enrichedAttendance = filteredAttendance.map((att: any) => {
-          const student = mockUsersStore.find((s: any) => s.id === att.studentId || s.registrationNumber === att.studentId);
-          // Finding course and class details might be more complex based on classId
-          // For now, using subject from attendance record directly if available
-          return {
-            ...att,
-            studentName: student ? student.name : 'Unknown Student',
-            courseName: att.subject || 'Unknown Course', // att.subject comes from generateAttendanceData
-          };
-        });
-        return mockResponse(enrichedAttendance);
+        return mockResponse(attendanceToReturn);
     }
-    if (path.startsWith("/api/attendance/class")) { // GET /api/attendance/class/:classId/date/:date
-        const parts = path.split("/");
-        const classId = parseInt(parts[parts.length - 3]); // or parse based on structure
-        const date = parts[parts.length - 1];
-        const records = mockAttendanceStore.filter((a:any) => a.classId === classId && a.date === date);
+    if (path.startsWith("/api/attendance/class")) { // Expects /api/attendance/class/:classId/date/:dateString
+        const parts = path.split("/"); // e.g. ['', 'api', 'attendance', 'class', 'CLASSID_DAY', 'date', 'YYYY-MM-DD']
+        const date = parts.pop();
+        parts.pop(); // remove 'date'
+        const classIdMock = parts.pop(); // This is the mock classId from generateAttendanceData
+        
+        const records = mockAttendanceStore.filter((a:any) => a.classId === classIdMock && a.date === date);
         return mockResponse(records);
     }
     if (path.startsWith("/api/attendance")) {
-        if (method.toUpperCase() === "POST") { // Record attendance
-            const newAttendanceRecord = {
-                id: mockAttendanceStore.length > 0 ? Math.max(...mockAttendanceStore.map((a:any) => parseInt(a.id.split('_').pop()) || 0)) + 1 : 1, // Improve ID
-                ...data
-            };
-            // Update if exists for same student, class, date, or add new
+        if (method.toUpperCase() === "POST") {
+            const newRecord = { ...data };
+            // Find existing record for update, or add new
             const existingIndex = mockAttendanceStore.findIndex((a:any) => 
-                a.studentId === newAttendanceRecord.studentId &&
-                a.classId === newAttendanceRecord.classId &&
-                a.date === newAttendanceRecord.date
+                a.studentId === newRecord.studentId &&
+                a.classId === newRecord.classId && // Ensure classId matches
+                a.date === newRecord.date
             );
             if (existingIndex > -1) {
-                mockAttendanceStore[existingIndex] = { ...mockAttendanceStore[existingIndex], ...newAttendanceRecord };
-                 console.log("[Mock API] Updated attendance:", newAttendanceRecord);
+                mockAttendanceStore[existingIndex] = { ...mockAttendanceStore[existingIndex], ...newRecord, id: mockAttendanceStore[existingIndex].id };
+                console.log("[Mock API] Updated attendance:", mockAttendanceStore[existingIndex]);
+                return mockResponse(mockAttendanceStore[existingIndex], 200);
             } else {
-                mockAttendanceStore.push(newAttendanceRecord);
-                 console.log("[Mock API] Added new attendance:", newAttendanceRecord);
+                const newId = `${newRecord.subjectCode || 'SUB'}_${newRecord.studentId}_${new Date().getTime()}`; // More unique ID
+                const recordToAdd = { ...newRecord, id: newId };
+                mockAttendanceStore.push(recordToAdd);
+                console.log("[Mock API] Added new attendance:", recordToAdd);
+                return mockResponse(recordToAdd, 201);
             }
-            return mockResponse(newAttendanceRecord, 201);
         }
-         // Default GET /api/attendance returns all
-        return mockResponse(mockAttendanceStore);
+        return mockResponse(mockAttendanceStore); // GET /api/attendance
     }
 
-
-    // --- Dashboard related mocks (MCA focused) ---
+    // --- Dashboard related mocks ---
     if (path.startsWith("/api/dashboard/chart")) {
-        const today = new Date();
-        const mcaStudentsCount = initialRollList.find(r => r.department === "MCA")?.rollList.length || 65;
-        const chartData = Array.from({ length: 7 }).map((_, i) => {
-            const date = new Date(today);
-            date.setDate(today.getDate() - (6 - i));
-            const present = Math.floor(Math.random() * (mcaStudentsCount * 0.7)) + Math.floor(mcaStudentsCount * 0.2); // Random present count
-            const absent = mcaStudentsCount - present;
-            return { date: date.toISOString().split("T")[0], present, absent };
-        });
-        return mockResponse(chartData);
+      const today = new Date();
+      // Use studentList from appMockData, filter by department if needed (e.g. MCA)
+      const mcaStudentsCount = studentList.filter(s => s.department === "MCA").length || 0;
+      const chartData = Array.from({ length: 7 }).map((_, i) => {
+          const date = new Date(today);
+          date.setDate(today.getDate() - (6 - i));
+          const present = Math.floor(Math.random() * (mcaStudentsCount * 0.7)) + Math.floor(mcaStudentsCount * 0.1);
+          const absent = mcaStudentsCount - present;
+          return { date: date.toISOString().split("T")[0], present, absent };
+      });
+      return mockResponse(chartData);
     }
     if (path.startsWith("/api/dashboard/class-summary")) {
-      const mcaCourseDetails = initialSubjectsData["mca"].slice(0, 4).map(subject => ({ // Take first 4 for summary
-        subjectName: subject.name,
-        subjectCode: subject.code,
-        facultyName: subject.faculty || "N/A",
-        time: "09:00 AM", // Sample time
-        attendanceRate: Math.floor(Math.random() * 30) + 70, // 70-100%
-      }));
-      return mockResponse(mcaCourseDetails);
+      const mcaSubjects = mockCoursesStore.filter((s:any) => s.department === "MCA").slice(0, 4);
+      const summary = mcaSubjects.map((subject:any) => {
+        const faculty = mockUsersStore.find((f:any) => f.id === subject.facultyId && f.role === 'faculty');
+        return {
+            subjectName: subject.name,
+            subjectCode: subject.code,
+            facultyName: faculty?.name || "N/A",
+            time: "10:00 AM", 
+            attendanceRate: Math.floor(Math.random() * 20) + 75,
+        };
+      });
+      return mockResponse(summary);
     }
     if (path.startsWith("/api/dashboard/recent-attendance")) {
-      const mcaAttendance = initialMockAttendanceData.filter((att: any) => {
-        const student = initialMockUsers.find(u => u.registrationNumber === att.studentId);
-        return student && student.department === "MCA";
-      });
-      const recent = [...mcaAttendance]
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 5) // Show 5 recent records
-        .map(att => ({
-          ...att,
-          studentName: initialMockUsers.find(u => u.registrationNumber === att.studentId)?.name || att.studentName,
-          // courseName: initialSubjectsData.mca.find(s => s.code === att.subjectCode)?.name || att.subject
-        }));
+      const recent = [...mockAttendanceStore]
+        .filter((att: any) => att.department === "MCA") // Filter for MCA if dashboard is MCA specific
+        .sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5)
+        .map((att:any) => {
+            const student = mockUsersStore.find((u:any) => u.id === att.studentId);
+            return {...att, studentName: student?.name || att.studentName};
+        });
       return mockResponse(recent);
     }
     if (path.startsWith("/api/dashboard/alerts")) {
-      const detainedStudents = initialRollList[0].rollList.filter(s => s.type === "Detained");
-      const alerts = detainedStudents.slice(0, 2).map(student => ({
+      const mcaDetainedStudents = studentList.filter(s => s.department === "MCA" && s.type === "Detained");
+      const alerts = mcaDetainedStudents.slice(0, 2).map(student => ({
         id: `alert_${student.registrationNumber}`,
-        message: `Student ${student.name} (${student.registrationNumber}) has low attendance in multiple subjects.`,
+        message: `Student ${student.name} (${student.registrationNumber}) has low attendance.`,
         type: "warning", date: new Date().toISOString(),
       }));
-      if(alerts.length === 0) alerts.push({ id: 'info1', message: 'Overall attendance for MCA is above 80%.', type: 'info', date: new Date().toISOString() });
+      if(alerts.length === 0) alerts.push({ id: 'info_mca_ok', message: 'MCA attendance is generally good.', type: 'info', date: new Date().toISOString() });
       return mockResponse(alerts);
     }
     if (path.startsWith("/api/dashboard/stats")) {
-      const mcaRoll = initialRollList.find(r => r.department === "MCA")?.rollList || [];
-      const totalStudents = mcaRoll.length;
-      // Simulate some stats
-      const presentToday = Math.floor(totalStudents * (Math.random() * 0.2 + 0.7)); // 70-90% present
-      const overallAttendance = Math.floor(Math.random() * 15) + 75; // 75-90%
-      const absentStudentsCount = mockAttendanceStore.filter((a: any) => a.date === new Date().toISOString().split('T')[0] && a.status === 'absent').length || Math.floor(totalStudents * 0.1);
-
+      const mcaStudents = studentList.filter(s => s.department === "MCA");
+      const totalStudents = mcaStudents.length;
+      const overallAttendance = Math.floor(Math.random() * 10) + 80; // 80-90%
+      const todayDayStr = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+      const classesTodayCount = mockClassesStore.filter((c: any) => {
+          const course = mockCoursesStore.find((cs: any) => cs.id === c.courseId || cs.code === c.courseId);
+          return c.day === todayDayStr && course?.department === "MCA";
+      }).length;
+      const absentToday = mockAttendanceStore.filter((a:any) => a.department === "MCA" && a.date === new Date().toISOString().split('T')[0] && a.status === 'absent').length;
 
       return mockResponse({
         attendanceRate: overallAttendance,
         totalStudents: totalStudents,
-        classesToday: mockClassesStore.filter(c => c.day === new Date().toLocaleDateString('en-US', { weekday: 'long' })).length || 2, // Example
-        absentStudents: absentStudentsCount,
+        classesToday: classesTodayCount || 2, // Fallback
+        absentStudents: absentToday || Math.floor(totalStudents * 0.05), // Fallback
       });
     }
 
-    // If no mock is found for the URL, log it and return a 404 or specific error
-    console.warn(`[Mock API Request] No mock handler for ${method} ${path}.`);
+    console.warn(`[Mock API Request] No specific mock handler for ${method} ${path}. Returning 404.`);
     return mockResponse({ message: `Mock for ${method} ${path} not found.` }, 404);
   }
 
-  // Real fetch logic (fallback if VITE_USE_MOCK is false)
+  // Fallback for real fetch if VITE_USE_MOCK is false
   console.warn("[Mock API Request] VITE_USE_MOCK is false. Attempting real fetch.");
   const realResponse = await fetch(url, {
     method,
@@ -387,31 +424,27 @@ export async function apiRequest(method: string, url: string, data?: any): Promi
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
-  // To make it compatible with MockResponse structure for throwIfResNotOk
   return {
       ok: realResponse.ok,
       status: realResponse.status,
       json: () => realResponse.json(),
       text: () => realResponse.text(),
-      body: realResponse.body // This is a ReadableStream, not directly usable like mock body
+      body: realResponse.body 
   };
 }
 
 // --- React Query Client Setup ---
-type UnauthorizedBehavior = "returnNull" | "throw";
-
-export const getQueryFnConstructor: <T>(options: {
-  on401: UnauthorizedBehavior;
+export const getQueryFnConstructor: <T>(options?: { // Made options optional
+  on401?: any; // Type for on401 can be refined if used
 }) => QueryFunction<T> =
-  () => // Removed on401 for now as apiRequest handles errors
+  () =>
   async ({ queryKey }) => {
     const url = queryKey[0] as string;
     let fullUrl = url;
-    const paramsObj = queryKey[1] as Record<string, string> | undefined;
+    const paramsObj = queryKey[1] as Record<string, string | number | boolean | undefined | null> | undefined;
 
     if (paramsObj && typeof paramsObj === 'object' && Object.keys(paramsObj).length > 0) {
         const queryParams = new URLSearchParams();
-        // Filter out undefined/null params that might come from optional chaining (e.g. user?.id)
         for (const key in paramsObj) {
             if (paramsObj[key] !== undefined && paramsObj[key] !== null) {
                 queryParams.append(key, String(paramsObj[key]));
@@ -422,32 +455,27 @@ export const getQueryFnConstructor: <T>(options: {
         }
     }
     
-    const res = await apiRequest('GET', fullUrl); // apiRequest handles mock/real
-    await throwIfResNotOk(res); // Use the modified throwIfResNotOk
+    const res = await apiRequest('GET', fullUrl);
+    await throwIfResNotOk(res);
     return res.json();
   };
-
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFnConstructor({ on401: "throw" }) as QueryFunction<unknown, readonly unknown[], unknown>,
+      queryFn: getQueryFnConstructor() as QueryFunction<unknown, readonly unknown[], unknown>,
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes for staleTime
+      staleTime: 5 * 60 * 1000, 
       retry: (failureCount, error: any) => {
-        // Do not retry on 404 or 401/403 errors from our mock/real API
         if (error.status === 404 || error.status === 401 || error.status === 403) {
           return false;
         }
-        // Default retry for other errors (e.g., network issues if not mocking)
         return failureCount < 2; 
       },
     },
     mutations: {
       retry: false,
-      // You can add a default mutationFn here if you want one,
-      // but mutations often call apiRequest directly with method and data.
     },
   },
 });

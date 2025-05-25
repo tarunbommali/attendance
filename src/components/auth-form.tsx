@@ -1,3 +1,4 @@
+// src/components/auth-form.tsx
 import { useState } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
@@ -9,31 +10,37 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "../components/ui/form";
-import { Input } from "../components/ui/input";
-import { Button } from "../components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "../components/ui/card";
+} from "./ui/form";
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"; // Removed CardFooter
 import { ClipboardCheckIcon } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 
 interface AuthFormProps {
   onSubmit: (username: string, password: string) => Promise<any>;
   isLoading: boolean;
+  title?: string;
+  description?: string;
+  roleSpecificClass?: string;
+  usernamePlaceholder?: string;
+  passwordPlaceholder?: string;
 }
 
 const formSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
+  username: z.string().min(3, "Username/ID must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
-export function AuthForm({ onSubmit, isLoading }: AuthFormProps) {
+export function AuthForm({
+  onSubmit,
+  isLoading,
+  title = "Attendly Login",
+  description = "Enter your credentials to access your account",
+  roleSpecificClass = "",
+  usernamePlaceholder = "Enter your username",
+  passwordPlaceholder = "Enter your password"
+}: AuthFormProps) {
   const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
 
@@ -50,98 +57,68 @@ export function AuthForm({ onSubmit, isLoading }: AuthFormProps) {
     try {
       await onSubmit(data.username, data.password);
     } catch (error: any) {
-      setError(error.message || "Failed to login. Please try again.");
+      const errorMessage = error.message || "Failed to login. Please try again.";
+      setError(errorMessage);
       toast({
         variant: "destructive",
-        title: "Login failed",
-        description:
-          error.message || "Please check your credentials and try again.",
+        title: "Login Failed",
+        description: errorMessage,
       });
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <div className="flex justify-center mb-4">
-            <div className="bg-primary-500 text-white p-3 rounded-full">
-              <ClipboardCheckIcon className="h-8 w-8" />
+    <Card className={`w-full ${roleSpecificClass}`}> {/* roleSpecificClass for border highlight */}
+      <CardHeader className="space-y-1 text-center">
+        <div className="flex justify-center mb-4">
+            <div className="bg-primary text-primary-foreground p-3 rounded-full">
+                <ClipboardCheckIcon className="h-8 w-8" />
             </div>
+        </div>
+        <CardTitle className="text-2xl font-bold">{title}</CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <div className="bg-destructive/10 text-destructive p-3 rounded-md mb-4 text-sm dark:bg-destructive/20 dark:text-red-300">
+            {error}
           </div>
-          <CardTitle className="text-2xl font-thin text-center">
-            Attendly
-          </CardTitle>
-          <CardDescription className="text-center">
-            Enter your credentials to access your account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 p-3 rounded-md mb-4 text-sm">
-              {error}
-            </div>
-          )}
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleSubmit)}
-              className="space-y-4"
-            >
-              <FormField
-                control={form.control}
-                name="username"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Username</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter your username" autoComplete="username" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        autoComplete="current-password"
-                        placeholder="Enter your password"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Logging in..." : "Login"}
-              </Button>
-            </form>
-          </Form>
-        </CardContent>
-        <CardFooter className="flex flex-col">
-          <div className="text-sm text-muted-foreground text-center mb-2">
-            Demo Credentials:
-          </div>
-          <div className="grid grid-cols-2 gap-2 w-full">
-            <div className="p-2 border rounded text-xs">
-              <div className="font-semibold mb-1">Admin</div>
-              <div>Username: admin</div>
-              <div>Password: admin123</div>
-            </div>
-            <div className="p-2 border rounded text-xs">
-              <div className="font-semibold mb-1">Faculty</div>
-              <div>Username: johnson</div>
-              <div>Password: faculty123</div>
-            </div>
-          </div>
-        </CardFooter>
-      </Card>
-    </div>
+        )}
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="username"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Username / ID</FormLabel>
+                  <FormControl>
+                    <Input placeholder={usernamePlaceholder} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Password</FormLabel>
+                  <FormControl>
+                    <Input type="password" placeholder={passwordPlaceholder} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Logging in..." : "Sign In"}
+            </Button>
+          </form>
+        </Form>
+      </CardContent>
+      {/* CardFooter with demo credentials has been removed */}
+    </Card>
   );
 }

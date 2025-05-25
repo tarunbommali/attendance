@@ -6,20 +6,28 @@ import {
   CalendarIcon,
   AlertCircleIcon
 } from "lucide-react";
-import { Layout } from "@/components/layout";
-import { StatCard } from "@/components/stat-card";
-import { DateFilter } from "@/components/date-filter";
-import { AttendanceChart } from "@/components/attendance-chart";
-import { ClassSummary } from "@/components/class-summary";
-import { RecentAttendance } from "@/components/recent-attendance";
-import { AttendanceAlerts } from "@/components/attendance-alerts";
-import { Button } from "@/components/ui/button";
+import { Layout } from "../components/layout";
+import { StatCard } from "../components/stat-card";
+import { DateFilter } from "../components/date-filter";
+import { AttendanceChart } from "../components/attendance-chart";
+import { ClassSummary } from "../components/class-summary";
+import { RecentAttendance } from "../components/recent-attendance";
+import { AttendanceAlerts } from "../components/attendance-alerts";
+import { Button } from "../components/ui/button";
 import { Download, Plus } from "lucide-react";
 
 export default function Dashboard() {
   const [dateRange, setDateRange] = useState({ startDate: "01/04/2023", endDate: "30/04/2023" });
   
-  const { data: dashboardStats, isLoading } = useQuery({
+  type DashboardStats = {
+    attendanceRate: number;
+    totalStudents: number;
+    classesToday: number;
+    absentStudents: number;
+    // add other properties if needed
+  };
+
+  const { data: dashboardStats, isLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/dashboard/stats'],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
